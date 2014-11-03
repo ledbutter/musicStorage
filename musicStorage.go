@@ -16,28 +16,34 @@ var (
 	c, e = redis.Dial("tcp", ADDRESS)
 )
 
+// Represents a stored wishlist album.
 type SavedAlbum struct {
 	Key    string
 	Title  string
 	Artist string
 }
 
+// Lists all the wishlist albums currently being tracked.
 func ListAlbums() []SavedAlbum {
 	/*
 		let's use a redis list so we get ordered items
 	*/
-	var albums = make([]SavedAlbum, 10, 100)
-
-	//var vals []interface{}
-	vals, err := redis.Strings(c.Do("LRANGE", LISTKEY, 0, -1))
+	vals, err := redis.Values(c.Do("LRANGE", LISTKEY, 0, -1))
 	if err != nil {
 		fmt.Println("Uh oh, Do")
+		return nil
+	} else {
+		//i assume there is a more elegant way to do this, but that way is unknown
+		//to this feeble mind
+		albums := make([]SavedAlbum, len(vals))
+		for i, v := range vals {
+			albums[i] = v.(SavedAlbum)
+		}
+		return albums
 	}
-	fmt.Printf("%#v", vals)
-
-	return albums
 }
 
+// Adds a new album to the list of wishlist albums.
 func AddAlbum(album SavedAlbum) (err error) {
 	c.Send("MULTI")
 
@@ -46,6 +52,7 @@ func AddAlbum(album SavedAlbum) (err error) {
 	return
 }
 
+// Removes an album from the list of wishlist albums.
 func RemoveAlbum(album SavedAlbum) (err error) {
 	c.Send("MULTI")
 	c.Send("lrem", LISTKEY, 0, album)
