@@ -3,6 +3,7 @@ package musicStorage
 import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
+	//	"strings"
 )
 
 //based in part on https://coderwall.com/p/unklzq
@@ -18,9 +19,9 @@ var (
 
 // Represents a stored wishlist album.
 type SavedAlbum struct {
-	Key    string
-	Title  string
-	Artist string
+	Key    string `redis:"key"`
+	Title  string `redis:"title"`
+	Artist string `redis:"artist"`
 }
 
 // Lists all the wishlist albums currently being tracked.
@@ -28,17 +29,22 @@ func ListAlbums() []SavedAlbum {
 	/*
 		let's use a redis list so we get ordered items
 	*/
-	vals, err := redis.Values(c.Do("LRANGE", LISTKEY, 0, -1))
+	vals, err := redis.Values(c.Do("SORT", LISTKEY,
+		"BY", "nosort",
+		"GET", "*->key",
+		"GET", "*->title",
+		"GET", "*->artist"))
 	if err != nil {
 		fmt.Println("Uh oh, Do")
 		return nil
 	} else {
-		//i assume there is a more elegant way to do this, but that way is unknown
-		//to this feeble mind
-		albums := make([]SavedAlbum, len(vals))
-		for i, v := range vals {
-			albums[i] = v.(SavedAlbum)
+
+		var albums []SavedAlbum
+
+		if err := redis.ScanSlice(vals, &albums); err != nil {
+			panic(err)
 		}
+
 		return albums
 	}
 }
@@ -47,7 +53,9 @@ func ListAlbums() []SavedAlbum {
 func AddAlbum(album SavedAlbum) (err error) {
 	c.Send("MULTI")
 
-	c.Send("rpush", LISTKEY, album)
+	c.Send("HMSET", "album:"+album.Key, "key", album.Key, "title", album.Title, "artist", album.Artist)
+	c.Send("RPUSH", LISTKEY, "album:"+album.Key)
+	//c.Send("rpush", LISTKEY, album.Key, album.Title, album.Artist)
 	_, err = c.Do("EXEC")
 	return
 }
@@ -55,7 +63,8 @@ func AddAlbum(album SavedAlbum) (err error) {
 // Removes an album from the list of wishlist albums.
 func RemoveAlbum(album SavedAlbum) (err error) {
 	c.Send("MULTI")
-	c.Send("lrem", LISTKEY, 0, album)
+	c.Send("HDEL", "album:"+album.Key)
+	c.Send("lrem", LISTKEY, 0, album.Key)
 	_, err = c.Do("EXEC")
 	return
 }
